@@ -1,0 +1,51 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#222"><div id="sheet" style="display:flex;flex-wrap:wrap;gap:12px;padding:12px"></div>
+<script type="module">
+import { analyzeText } from '/js/memory/text-analysis.js';
+import { buildMemory } from '/js/memory/engine.js';
+import { resolveMusic } from '/js/memory/music.js';
+import { mergePhotoFeatures, featuresFromPixels } from '/js/memory/image-features.js';
+import { createPlayer } from '/js/memory/render.js';
+import { localTitle } from '/js/memory/title.js';
+
+// синтетические «фото»: пейзаж из градиентов и фигур, чтобы было что стилизовать
+function fakePhoto(kind, rgb, w = 640, h = 480) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  const [r, gg, b] = rgb;
+  const sky = g.createLinearGradient(0, 0, 0, h * 0.6);
+  sky.addColorStop(0, `rgb(${r},${gg},${b})`); sky.addColorStop(1, `rgb(${Math.min(255, r + 50)},${Math.min(255, gg + 40)},${Math.min(255, b + 20)})`);
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  g.fillStyle = `rgb(${r * 0.5 | 0},${gg * 0.55 | 0},${b * 0.5 | 0})`; g.fillRect(0, h * 0.62, w, h * 0.38);
+  for (let i = 0; i < 9; i++) { g.fillStyle = `rgba(${(r * (0.4 + i * 0.07)) | 0},${(gg * 0.5) | 0},${(b * 0.4) | 0},.9)`; g.beginPath(); g.arc(60 + i * 70, h * 0.58, 26 + (i % 3) * 14, 0, 7); g.fill(); }
+  g.fillStyle = 'rgba(255,240,200,.9)'; g.beginPath(); g.arc(w * 0.78, h * 0.22, 40, 0, 7); g.fill();
+  const img = new Image(); img.src = c.toDataURL(); return { img, c };
+}
+const px = (c) => { const g = c.getContext('2d'); const d = g.getImageData(0, 0, c.width, c.height); return featuresFromPixels(d.data, c.width, c.height); };
+
+const DAYS = [
+  { text: 'Гуляли по парку, листья под ногами, пили какао из термоса. Тихо и тепло.', rgb: [196, 130, 60], n: 2, music: { genre: 'jazz', year: 1964 }, date: '2026-10-18', meta: 'Frank Sinatra · Fly Me to the Moon' },
+  { text: 'Ночью в офисе, дедлайн горит, не спал, кофе третья чашка, срочно сдать проект. Волнуюсь.', rgb: [30, 40, 70], n: 1, music: { genre: 'techno', bpm: 138 }, date: '2026-11-03', meta: 'techno · 138 уд/мин' },
+  { text: 'День рождения! Друзья, смех, танцы, торт, все вместе, вечеринка до утра. Ура!', rgb: [220, 90, 120], n: 3, music: { genre: 'pop', bpm: 122 }, date: '2026-06-14', meta: 'pop · 122 уд/мин' },
+  { text: 'Дождь весь день, серо, читал один, тихо, немного грустно и скучаю по дому.', rgb: [110, 120, 135], n: 1, music: { genre: 'ambient' }, date: '2026-09-22', meta: 'ambient' },
+  { text: 'Снег с утра, мороз, тишина, спокойный завтрак в одиночестве.', rgb: [225, 230, 240], n: 1, music: { genre: 'classical' }, date: '2026-01-12', meta: 'classical' },
+  { text: 'Утром бег по пляжу, море, солнце, тренировка, настроение отличное!', rgb: [80, 170, 210], n: 2, music: { genre: 'rock', bpm: 150 }, date: '2026-07-20', meta: 'rock · 150 уд/мин' },
+  { text: 'Вечером у бабушки, вспоминали детство, листали старый альбом, чай и тепло. Скучаю по тем временам.', rgb: [170, 120, 80], n: 1, music: { genre: 'folk', year: 1975 }, date: '2026-11-08', meta: 'folk · 1975' },
+  { text: 'Просто день без фото. Работал, потом дом, ужин и сон.', rgb: null, n: 0, music: { genre: 'pop' }, date: '2026-10-02', meta: '' },
+];
+const out = [];
+const sheet = document.getElementById('sheet');
+const t0 = performance.now();
+for (const d of DAYS) {
+  const photos = []; const feats = [];
+  for (let i = 0; i < d.n; i++) {
+    const rgb = d.rgb.map((x) => Math.max(0, Math.min(255, x + (i * 25 - 15))));
+    const { img, c } = fakePhoto('x', rgb); await img.decode(); photos.push(img); feats.push(px(c));
+  }
+  const text = analyzeText(d.text);
+  const mem = buildMemory({ text, photos: feats.length ? mergePhotoFeatures(feats) : null, music: resolveMusic({ meta: {}, manual: d.music }), date: d.date }, { seed: 1, sign: 'Аян' });
+  const cv = document.createElement('canvas'); cv.style.width = '270px'; sheet.appendChild(cv);
+  const t1 = performance.now();
+  const p = await createPlayer(cv, mem, { photos, title: localTitle(d.text, text, 'ru'), dateText: new Date(d.date).toLocaleDateString('ru', { day: 'numeric', month: 'long', year: 'numeric' }), metaText: d.meta, dateStamp: '18 10 26', sign: 'Аян', scale: 0.6 }, { still: false });
+  out.push({ technique: mem.technique, ms: Math.round(performance.now() - t1) });
+}
+window.__result = { out, total: Math.round(performance.now() - t0) };
+</script>
