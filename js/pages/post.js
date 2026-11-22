@@ -79,47 +79,6 @@ export default async function page({ params, navigate }) {
   const onVis = () => { if (document.hidden && player?.playing) { player.pause(); soundPause(); paintControls(); } };
   document.addEventListener('visibilitychange', onVis);
 
-  // ---------- капсула времени и «Прожить день заново» (только автору)
-  let capsule = null;
-  const capsuleReady = own ? rpc('get_capsule', { p_post: post.id }).then((c) => { capsule = c; }).catch(() => {}) : Promise.resolve();
-  function showLetter() {
-    if (!capsule?.exists || capsule.sealed || !capsule.body) return;
-    modal({
-      title: t('capsule.from', { date: fmtDate(capsule.created_at) }),
-      body: h('div', { class: 'post-text', style: { whiteSpace: 'pre-wrap', fontFamily: 'var(--font-display, Georgia, serif)', fontSize: '1.15rem', lineHeight: '1.6' } }, capsule.body),
-      actions: [{ label: t('capsule.close'), class: 'ghost', value: true }],
-    });
-  }
-  const capsuleLine = h('p', { class: 'small muted', style: { margin: '12px 0 0' } });
-  const capsuleRead = h('button', { class: 'btn ghost small', type: 'button', onclick: showLetter }, icon('lock', 16), t('capsule.read'));
-  capsuleRead.classList.add('hidden');
-  capsuleReady.then(() => {
-    if (dead) return;
-    if (!capsule?.exists) capsuleLine.textContent = t('capsule.none');
-    else if (capsule.sealed) capsuleLine.textContent = t('capsule.sealed_until', { date: fmtDate(capsule.opens_on) });
-    else capsuleRead.classList.remove('hidden');
-  });
-  async function relive() {
-    stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    stopVoice();
-    player?.restart(); player?.play(); soundRestart(); soundPlay(); soundVol(MUSIC_VOL);
-    paintControls();
-    const text = [post.title, post.text].filter(Boolean).join('. ');
-    await capsuleReady;
-    await speak(text, mem.voice || voiceProfile(mem.vec || { arousal: 0.5, warmth: 0.5 }), getLang(), {
-      onStart: () => { soundVol(DUCK_VOL); paintControls(); },
-      onEnd: () => { soundVol(MUSIC_VOL); paintControls(); showLetter(); },
-    });
-    paintControls();
-  }
-  const capsuleBox = own ? h('section', { class: 'inside', style: { marginTop: '22px' } },
-    h('h3', null, t('capsule.title')),
-    h('p', { class: 'small muted', style: { margin: '0 0 12px' } }, t('capsule.relive_hint')),
-    h('div', { class: 'row wrap' },
-      h('button', { class: 'btn small', type: 'button', onclick: relive }, icon('restart', 16), t('capsule.relive')),
-      capsuleRead),
-    capsuleLine) : null;
-
   // ---------- текст и действия
   const menuWrap = h('div', { class: 'rel' });
   const more = h('button', { class: 'iconbtn', type: 'button', 'aria-label': t('common.more'), 'aria-haspopup': 'menu' }, icon('more'));
@@ -245,7 +204,6 @@ export default async function page({ params, navigate }) {
       likeButton(post),
       h('button', { class: 'btn ghost small', type: 'button', onclick: showLikers }, t('post.who_liked')),
       h('a', { class: 'like', href: '#comments', 'aria-label': t('post.comments') }, icon('comment', 22), commentCount)),
-    capsuleBox,
     inside,
     musicBlock(),
     h('section', { id: 'comments', style: { marginTop: '30px' } }, h('h3', null, t('post.comments')), commentsBox, cform));
