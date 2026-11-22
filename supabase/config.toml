@@ -1,0 +1,3 @@
+# Минимальный конфиг для Supabase CLI. Платформа проверяет JWT до запуска функции.
+[functions.ai]
+verify_jwt = true
