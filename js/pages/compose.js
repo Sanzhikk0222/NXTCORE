@@ -4,7 +4,7 @@ import { icon } from '../core/icons.js';
 import { sb } from '../core/supabase.js';
 import { state, settings } from '../core/state.js';
 import { rpc, callAi, handleFail, signedUrls, removeFiles, forgetSigned } from '../core/api.js';
-import { toast, spinner, setHint } from '../core/ui.js';
+import { toast, spinner, setHint, fmtDate } from '../core/ui.js';
 import { prepareImage, loadImage, toUploadItem, blobToBase64 } from '../core/media.js';
 import { t, getLang } from '../i18n/index.js';
 import { analyzeText, mergeTextSignals } from '../memory/text-analysis.js';
@@ -32,6 +32,9 @@ export default async function page({ params, navigate }) {
     old = await rpc('get_post', { p_id: editId });
     if (!old || old.user_id !== me.id) { toast(t('err.not_found'), 'error'); navigate('/', { replace: true }); return { el: h('div') }; }
   }
+  // капсула времени: при правке подтягиваем уже написанное письмо (если оно не запечатано)
+  let oldCapsule = null;
+  if (editId) { try { oldCapsule = await rpc('get_capsule', { p_post: editId }); } catch { oldCapsule = null; } }
   const S = {
     id: editId || crypto.randomUUID(),
     title: old?.title || '', text: old?.text || '', mood: old?.mood || null,
@@ -74,7 +77,7 @@ export default async function page({ params, navigate }) {
   const signIn = h('input', { class: 'input', id: 'c-sign', maxlength: '30', value: S.sign });
 
   const photoGrid = h('div', { class: 'photo-grid' });
-  const fileIn = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, class: 'sr', tabindex: '-1', id: 'c-files' });
+  const fileIn = h('input', { type: 'file', accept: 'image/*', multiple: true, class: 'sr', tabindex: '-1', id: 'c-files' });
   function paintPhotos() {
     photoGrid.replaceChildren(
       ...S.items.map((it, i) => h('div', { class: 'photo-tile' }, h('img', { src: it.url, alt: t('compose.photo_n', { n: i + 1 }) }),
@@ -236,6 +239,41 @@ export default async function page({ params, navigate }) {
 
   const reroll = h('button', { type: 'button', class: 'btn ghost small', onclick: () => { S.variant++; rebuild(); } }, icon('dice', 16), t('compose.reroll'));
 
+  // ---------- капсула времени
+  const capHas = !!oldCapsule?.exists;
+  const capSealed = capHas && oldCapsule.sealed;
+  const capText = h('textarea', { class: 'textarea', id: 'c-capsule', maxlength: '800', placeholder: t('capsule.ph'), style: { minHeight: '110px' } });
+  capText.value = capHas && !capSealed ? (oldCapsule.body || '') : '';
+  const capSeal = h('select', { class: 'select', id: 'c-seal', 'aria-label': t('capsule.seal') },
+    capHas && oldCapsule.opens_on ? h('option', { value: 'keep' }, t('capsule.opt_keep', { date: fmtDate(oldCapsule.opens_on) })) : null,
+    h('option', { value: 'now' }, t('capsule.opt_now')), h('option', { value: 'month' }, t('capsule.opt_month')),
+    h('option', { value: 'half' }, t('capsule.opt_half')), h('option', { value: 'year' }, t('capsule.opt_year')));
+  if (!(capHas && oldCapsule.opens_on)) capSeal.value = 'now';
+  let capTouched = false;
+  capText.addEventListener('input', () => { capTouched = true; });
+  capSeal.addEventListener('change', () => { capTouched = true; });
+  const capOpensDate = () => {
+    const v = capSeal.value;
+    if (v === 'keep') return oldCapsule.opens_on;
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    if (v === 'month') d.setMonth(d.getMonth() + 1);
+    else if (v === 'half') d.setMonth(d.getMonth() + 6);
+    else if (v === 'year') d.setFullYear(d.getFullYear() + 1);
+    else return null;
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  };
+  // сохраняем письмо после записи; сбой письма не отменяет сохранённую запись
+  async function saveCapsule() {
+    const txt = capText.value.trim();
+    if (editId && !capTouched) return true;
+    if (capSealed && !txt) return true; // письмо запечатано, текста мы не видели: ничего не меняем
+    if (!editId && !txt) return true;
+    try {
+      const r = await rpc('set_capsule', { p_post: S.id, p_body: txt, p_opens: txt ? capOpensDate() : null });
+      return r?.ok !== false;
+    } catch { return false; }
+  }
+
   // ---------- публикация
   const publishBtn = h('button', { type: 'button', class: 'btn', style: { minWidth: '180px' } }, editId ? t('compose.save') : t('compose.publish'));
   const progress = h('div', { class: 'hint', 'aria-live': 'polite', style: { justifyContent: 'flex-start' } });
@@ -320,7 +358,9 @@ export default async function page({ params, navigate }) {
         // замененный аудиофайл
         if (old?.music?.audio_path && old.music.audio_path !== payload.music?.audio_path) await removeFiles('audio', [old.music.audio_path]);
       }
+      const capOk = await saveCapsule();
       toast(editId ? t('compose.saved') : t('compose.published'), 'ok');
+      if (!capOk) toast(t('capsule.fail'), 'error', { ms: 7000 });
       navigate('/post/' + S.id, { replace: true });
     } catch (e) {
       console.error(e);
@@ -344,6 +384,11 @@ export default async function page({ params, navigate }) {
     sec(t('compose.sec_text'),
       h('div', { class: 'field', style: { marginBottom: '10px' } }, h('label', { for: 'c-title' }, t('compose.title')), title, h('div', { class: 'hint' }, t('compose.title_hint'))),
       h('div', { class: 'field' }, h('label', { for: 'c-text' }, t('compose.text')), text, h('div', { class: 'hint' }, h('span', null, t('compose.text_hint')), counter))),
+    sec(t('capsule.title'),
+      h('p', { class: 'hint', style: { display: 'block', marginTop: 0 } }, t('capsule.hint')),
+      capSealed ? h('p', { class: 'hint', style: { display: 'block' } }, t('capsule.sealed_note', { date: fmtDate(oldCapsule.opens_on) })) : null,
+      h('div', { class: 'field' }, capText),
+      h('div', { class: 'field', style: { marginBottom: 0 } }, h('label', { for: 'c-seal' }, t('capsule.seal')), capSeal)),
     sec(t('compose.sec_photos'), photoGrid, fileIn, h('div', { class: 'hint' }, t('compose.photos_hint'))),
     sec(t('compose.sec_ai'), aiBox),
     sec(t('compose.sec_mood'), moodChips),

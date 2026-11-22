@@ -46,25 +46,79 @@ export default async function page({ params, navigate }) {
     } catch (e) { console.warn('player', e); }
   }
 
+  // ---------- музыка записи играет вместе с анимацией
+  let soundAudio = null, ytFrame = null;
+  const MUSIC_VOL = 0.7, DUCK_VOL = 0.22;
+  const yt = (func, args = []) => { try { ytFrame?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), 'https://www.youtube-nocookie.com'); } catch { /* ничего */ } };
+  const soundVol = (v) => { if (soundAudio) soundAudio.volume = v; yt('setVolume', [Math.round(v * 100)]); };
+  function soundPlay() { if (soundAudio) soundAudio.play().catch(() => {}); yt('playVideo'); }
+  function soundPause() { soundAudio?.pause(); yt('pauseVideo'); }
+  function soundRestart() { if (soundAudio) soundAudio.currentTime = 0; yt('seekTo', [0, true]); }
+
   const playBtn = h('button', { class: 'btn ghost small', type: 'button' });
-  const restartBtn = h('button', { class: 'btn ghost small', type: 'button', 'aria-label': t('post.restart'), onclick: () => player?.restart() }, icon('restart', 16));
+  const restartBtn = h('button', { class: 'btn ghost small', type: 'button', 'aria-label': t('post.restart'), onclick: () => { player?.restart(); soundRestart(); } }, icon('restart', 16));
   const voiceBtn = h('button', { class: 'btn ghost small', type: 'button' });
   function paintControls() {
     const playing = !!player?.playing;
     playBtn.replaceChildren(icon(playing ? 'pause' : 'play', 16), playing ? t('post.pause') : t('post.play'));
     voiceBtn.replaceChildren(icon(isSpeaking() ? 'mute' : 'speaker', 16), isSpeaking() ? t('post.voice_stop') : t('post.voice'));
   }
-  playBtn.addEventListener('click', () => { if (!player) return; player.playing ? player.pause() : player.play(); paintControls(); });
+  playBtn.addEventListener('click', () => {
+    if (!player) return;
+    if (player.playing) { player.pause(); soundPause(); } else { player.play(); soundPlay(); }
+    paintControls();
+  });
   voiceBtn.addEventListener('click', async () => {
-    if (isSpeaking()) { stopVoice(); return paintControls(); }
+    if (isSpeaking()) { stopVoice(); soundVol(MUSIC_VOL); return paintControls(); }
     const text = [post.title, post.text].filter(Boolean).join('. ');
-    await speak(text, mem.voice || voiceProfile(mem.vec || { arousal: 0.5, warmth: 0.5 }), getLang(), { onEnd: paintControls });
+    await speak(text, mem.voice || voiceProfile(mem.vec || { arousal: 0.5, warmth: 0.5 }), getLang(), { onStart: () => soundVol(DUCK_VOL), onEnd: () => { soundVol(MUSIC_VOL); paintControls(); } });
     paintControls();
   });
   ctrl.append(playBtn, restartBtn);
   if (post.voice?.on && voiceSupported()) ctrl.append(voiceBtn);
-  const onVis = () => { if (document.hidden && player?.playing) { player.pause(); paintControls(); } };
+  const onVis = () => { if (document.hidden && player?.playing) { player.pause(); soundPause(); paintControls(); } };
   document.addEventListener('visibilitychange', onVis);
+
+  // ---------- капсула времени и «Прожить день заново» (только автору)
+  let capsule = null;
+  const capsuleReady = own ? rpc('get_capsule', { p_post: post.id }).then((c) => { capsule = c; }).catch(() => {}) : Promise.resolve();
+  function showLetter() {
+    if (!capsule?.exists || capsule.sealed || !capsule.body) return;
+    modal({
+      title: t('capsule.from', { date: fmtDate(capsule.created_at) }),
+      body: h('div', { class: 'post-text', style: { whiteSpace: 'pre-wrap', fontFamily: 'var(--font-display, Georgia, serif)', fontSize: '1.15rem', lineHeight: '1.6' } }, capsule.body),
+      actions: [{ label: t('capsule.close'), class: 'ghost', value: true }],
+    });
+  }
+  const capsuleLine = h('p', { class: 'small muted', style: { margin: '12px 0 0' } });
+  const capsuleRead = h('button', { class: 'btn ghost small', type: 'button', onclick: showLetter }, icon('lock', 16), t('capsule.read'));
+  capsuleRead.classList.add('hidden');
+  capsuleReady.then(() => {
+    if (dead) return;
+    if (!capsule?.exists) capsuleLine.textContent = t('capsule.none');
+    else if (capsule.sealed) capsuleLine.textContent = t('capsule.sealed_until', { date: fmtDate(capsule.opens_on) });
+    else capsuleRead.classList.remove('hidden');
+  });
+  async function relive() {
+    stage.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    stopVoice();
+    player?.restart(); player?.play(); soundRestart(); soundPlay(); soundVol(MUSIC_VOL);
+    paintControls();
+    const text = [post.title, post.text].filter(Boolean).join('. ');
+    await capsuleReady;
+    await speak(text, mem.voice || voiceProfile(mem.vec || { arousal: 0.5, warmth: 0.5 }), getLang(), {
+      onStart: () => { soundVol(DUCK_VOL); paintControls(); },
+      onEnd: () => { soundVol(MUSIC_VOL); paintControls(); showLetter(); },
+    });
+    paintControls();
+  }
+  const capsuleBox = own ? h('section', { class: 'inside', style: { marginTop: '22px' } },
+    h('h3', null, t('capsule.title')),
+    h('p', { class: 'small muted', style: { margin: '0 0 12px' } }, t('capsule.relive_hint')),
+    h('div', { class: 'row wrap' },
+      h('button', { class: 'btn small', type: 'button', onclick: relive }, icon('restart', 16), t('capsule.relive')),
+      capsuleRead),
+    capsuleLine) : null;
 
   // ---------- текст и действия
   const menuWrap = h('div', { class: 'rel' });
@@ -106,8 +160,16 @@ export default async function page({ params, navigate }) {
     const line = musicLine(m);
     const wrap = h('div', { class: 'stack' });
     if (line) wrap.append(h('div', null, h('b', null, line), m.year ? h('span', { class: 'muted' }, ' · ' + m.year) : null));
-    if (link?.embed) wrap.append(h('iframe', { class: 'embed', src: link.embed, height: String(link.height || 152), title: line || t('post.song'), loading: 'lazy', allow: 'autoplay; encrypted-media; clipboard-write', referrerpolicy: 'strict-origin-when-cross-origin', sandbox: 'allow-scripts allow-same-origin allow-presentation allow-popups' }));
-    else if (link?.direct) wrap.append(h('audio', { controls: true, preload: 'none', src: link.url, style: { width: '100%' } }));
+    if (link?.embed) {
+      const isYt = link.provider === 'youtube';
+      const src = isYt ? `${link.embed}?enablejsapi=1&playsinline=1&origin=${encodeURIComponent(location.origin)}` : link.embed;
+      const frame = h('iframe', { class: 'embed', src, height: String(link.height || 152), title: line || t('post.song'), loading: 'lazy', allow: 'autoplay; encrypted-media; clipboard-write', referrerpolicy: 'strict-origin-when-cross-origin', sandbox: 'allow-scripts allow-same-origin allow-presentation allow-popups' });
+      wrap.append(frame);
+      if (isYt) ytFrame = frame; else wrap.append(h('p', { class: 'small muted', style: { margin: 0 } }, t('post.music_manual')));
+    } else if (link?.direct) {
+      soundAudio = h('audio', { controls: true, preload: 'none', src: link.url, loop: true, style: { width: '100%' } });
+      wrap.append(soundAudio);
+    }
     else if (link) wrap.append(h('a', { href: link.url, target: '_blank', rel: 'noopener noreferrer' }, t('post.open_song', { p: PROVIDER_LABEL[link.provider] || '' })));
     else if (line && !m.audio_path) {
       const s = searchLinks({ artist: m.artist, title: m.title });
@@ -115,7 +177,7 @@ export default async function page({ params, navigate }) {
     }
     if (m.audio_path && own) {
       const holder = h('div');
-      signedUrls('audio', [m.audio_path]).then((u) => { if (u[m.audio_path]) holder.append(h('audio', { controls: true, preload: 'none', src: u[m.audio_path], style: { width: '100%' } })); });
+      signedUrls('audio', [m.audio_path]).then((u) => { if (u[m.audio_path]) { soundAudio = h('audio', { controls: true, preload: 'none', src: u[m.audio_path], loop: true, style: { width: '100%' } }); holder.append(soundAudio); } });
       wrap.append(holder);
     } else if (m.audio_path) wrap.append(h('p', { class: 'small muted' }, t('post.own_audio_private')));
     if (m.bpm) wrap.append(h('p', { class: 'small muted', style: { margin: 0 } }, [t('music.bpm', { n: m.bpm }), m.estimated ? t('post.estimated') : ''].filter(Boolean).join(' · ')));
@@ -183,6 +245,7 @@ export default async function page({ params, navigate }) {
       likeButton(post),
       h('button', { class: 'btn ghost small', type: 'button', onclick: showLikers }, t('post.who_liked')),
       h('a', { class: 'like', href: '#comments', 'aria-label': t('post.comments') }, icon('comment', 22), commentCount)),
+    capsuleBox,
     inside,
     musicBlock(),
     h('section', { id: 'comments', style: { marginTop: '30px' } }, h('h3', null, t('post.comments')), commentsBox, cform));
@@ -191,5 +254,5 @@ export default async function page({ params, navigate }) {
   startPlayer();
   if (location.hash === '#comments') setTimeout(() => document.getElementById('comments')?.scrollIntoView(), 400);
 
-  return { el, title: post.title || t('post.untitled'), destroy: () => { dead = true; player?.destroy(); stopVoice(); document.removeEventListener('visibilitychange', onVis); } };
+  return { el, title: post.title || t('post.untitled'), destroy: () => { dead = true; player?.destroy(); stopVoice(); soundPause(); document.removeEventListener('visibilitychange', onVis); } };
 }
