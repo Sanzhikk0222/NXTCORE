@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+supabase/.env
+supabase/.temp/
+*.log
+.DS_Store
+.vercel/

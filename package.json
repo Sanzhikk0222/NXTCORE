@@ -1,0 +1,20 @@
+{
+  "name": "nxtcore",
+  "version": "1.0.0",
+  "description": "NXTCORE: дневник, в котором день из текста, фото и песни становится воспоминанием",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "words": "node scripts/gen-words.mjs",
+    "sql": "bash scripts/build-sql.sh",
+    "test:engine": "node tests/engine.test.mjs",
+    "test:edge": "node --experimental-strip-types tests/edge.test.mjs",
+    "test:i18n": "node scripts/check-i18n.mjs",
+    "test:sql": "bash tests/run-sql.sh",
+    "test:ui": "node tests/browser/smoke.cjs"
+  },
+  "devDependencies": {
+    "playwright": "*"
+  }
+}
