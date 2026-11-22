@@ -1,0 +1,50 @@
+/* Палитра NXTCORE: тёплый крем, чернила, оранжевый. Тёмная тема меняет только значения. */
+:root {
+  --bg: #faf7f2;
+  --surface: #fffefb;
+  --surface-2: #f1ebdf;
+  --ink: #1a2332;
+  --ink-2: #4c5668;
+  --ink-3: #5f6a7d;
+  --line: #e6dccb;
+  --accent: #e07b39;
+  --accent-ink: #a8480f;      /* оранжевый для текста на кремовом: контраст 5,4:1 */
+  --accent-soft: #f9e0cd;
+  --on-accent: #1a2332;
+  --ok: #3d7a4f;
+  --danger: #b3321f;
+  --danger-soft: #f6d9d3;
+  --shadow-1: 0 1px 2px rgba(60, 40, 20, .08), 0 4px 14px rgba(60, 40, 20, .06);
+  --shadow-2: 0 2px 4px rgba(60, 40, 20, .1), 0 14px 34px rgba(60, 40, 20, .14);
+
+  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-title: "Playfair Display", Georgia, serif;
+  --font-hand: Caveat, "Segoe Script", cursive;
+
+  --r-s: 8px;
+  --r-m: 14px;
+  --r-l: 22px;
+  --header-h: 62px;
+  --side-w: 232px;
+  --tabs-h: 62px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+:root[data-theme="dark"] {
+  --bg: #131a26;
+  --surface: #1b2433;
+  --surface-2: #243044;
+  --ink: #f3eee6;
+  --ink-2: #a9b2c1;
+  --ink-3: #8993a4;
+  --line: #2e3a4f;
+  --accent: #f0894a;
+  --accent-ink: #ff9d68;
+  --accent-soft: #3b2a22;
+  --on-accent: #1a2332;
+  --ok: #7cc08f;
+  --danger: #ff8d7b;
+  --danger-soft: #4a221b;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .3);
+  --shadow-2: 0 2px 4px rgba(0, 0, 0, .5), 0 14px 34px rgba(0, 0, 0, .45);
+}
